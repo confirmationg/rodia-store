@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RODIA Store Admin</title>
+<style>
+  body{font-family:system-ui,sans-serif;margin:0;background:#f4f5f7;color:#111}
+  header{background:#0b6b3a;color:#fff;padding:12px 16px;font-weight:600}
+  nav{display:flex;gap:6px;padding:8px;overflow-x:auto;background:#fff;border-bottom:1px solid #ddd}
+  nav button{border:0;background:#eee;padding:8px 12px;border-radius:8px;white-space:nowrap}
+  nav button.on{background:#0b6b3a;color:#fff}
+  main{padding:12px;max-width:1000px;margin:auto}
+  .card{background:#fff;border-radius:10px;padding:12px;margin-bottom:10px;box-shadow:0 1px 2px #0001}
+  .scroll{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  td,th{padding:4px;text-align:left;vertical-align:top}
+  input,select,textarea{padding:6px;border:1px solid #ccc;border-radius:6px;font:inherit;max-width:100%;box-sizing:border-box}
+  td input{width:100%;min-width:70px}
+  button.act{background:#0b6b3a;color:#fff;border:0;padding:6px 10px;border-radius:6px}
+  .tag{background:#fff3cd;padding:2px 6px;border-radius:6px;font-size:12px}
+  .warn{color:#b00020}
+</style>
+</head>
+<body>
+<header>RODIA Store Admin</header>
+<nav id="nav"></nav>
+<main id="main"></main>
+<script>
+let PW = sessionStorage.getItem('pw') || '';
+const TABS = ['Orders', 'Products', 'Stats', 'Zones', 'Chats'];
+const $ = (s) => document.querySelector(s);
+const naira = (n) => '₦' + Number(n).toLocaleString('en-NG');
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function api(path, method = 'GET', body) {
+  const r = await fetch('/api/admin' + path, { method, headers: { 'Content-Type': 'application/json', 'x-admin-password': PW }, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401) { PW = ''; sessionStorage.removeItem('pw'); login(); throw new Error('unauthorized'); }
+  return r.json();
+}
+
+function login() {
+  $('#nav').innerHTML = '';
+  $('#main').innerHTML = '<div class="card"><h3>Admin login</h3><input id="pw" type="password" placeholder="Password"> <button class="act" onclick="doLogin()">Login</button></div>';
+}
+function doLogin() { PW = $('#pw').value; sessionStorage.setItem('pw', PW); start(); }
+
+function start() {
+  if (!PW) return login();
+  $('#nav').innerHTML = TABS.map((t) => `<button onclick="show('${t}')" id="t-${t}">${t}</button>`).join('');
+  show('Orders');
+}
+
+async function show(t) {
+  TABS.forEach((x) => $('#t-' + x)?.classList.toggle('on', x === t));
+  try { await views[t](); } catch (e) { console.error(e); }
+}
+
+const views = {
+  async Orders() {
+    const { rows, statuses } = await api('/orders');
+    $('#main').innerHTML = rows.map((o) => `<div class="card">
+      <b>${esc(o.order_no)}</b> · ${esc(o.phone)} · ${naira(o.total)}
+      ${o.pay_ref ? '<span class="tag">payment reported: ' + esc(o.pay_ref) + '</span>' : ''}<br>
+      <small>${JSON.parse(o.items).map((i) => esc(i.name) + ' ×' + i.qty).join(', ')}<br>
+      ${esc(o.delivery_type)}${o.delivery_type !== 'Pickup' ? ' – ' + esc(o.address) : ''} · fee ${naira(o.delivery_fee)}</small><br>
+      <select onchange="setStatus(${o.id}, this.value)">${statuses.map((s) => `<option ${s === o.status ? 'selected' : ''}>${s}</option>`).join('')}</select>
+    </div>`).join('') || '<div class="card">No orders yet.</div>';
+  },
+  async Products() {
+    const ps = await api('/products');
+    const row = (p = {}) => `<tr data-id="${p.id || ''}">
+      <td><input value="${esc(p.name)}" placeholder="Name"></td><td><input value="${esc(p.category)}" placeholder="Category"></td>
+      <td><input type="number" value="${p.price ?? ''}" placeholder="Price"></td><td><input type="number" value="${p.stock ?? ''}" placeholder="Stock"></td>
+      <td><input value="${esc(p.description)}" placeholder="Description"></td><td><input value="${esc(p.image_url)}" placeholder="Image URL"></td>
+      <td><select><option value="1">Active</option><option value="0" ${p.active === 0 ? 'selected' : ''}>Hidden</option></select></td>
+      <td><button class="act" onclick="saveProduct(this)">${p.id ? 'Save' : 'Add'}</button></td></tr>`;
+    $('#main').innerHTML = `<div class="card scroll"><table><tr><th>Name</th><th>Category</th><th>Price ₦</th><th>Stock</th><th>Description</th><th>Image</th><th></th><th></th></tr>
+      ${row()}${ps.map(row).join('')}</table></div>`;
+  },
+  async Stats() {
+    const d = await api('/stats');
+    $('#main').innerHTML = `<div class="card"><h3>Total sales (paid)</h3><b>${naira(d.sales)}</b></div>
+      <div class="card"><h3>Orders by status</h3>${d.byStatus.map((x) => `${esc(x.status)}: <b>${x.n}</b>`).join('<br>') || 'None yet'}</div>
+      <div class="card"><h3>Most ordered</h3>${d.top.map((x) => `${esc(x[0])}: <b>${x[1]}</b>`).join('<br>') || 'None yet'}</div>
+      <div class="card"><h3>Low stock</h3>${d.low.map((x) => `<span class="warn">⚠️ ${esc(x.name)} – ${x.stock} left</span>`).join('<br>') || 'All good'}</div>`;
+  },
+  async Zones() {
+    const z = await api('/zones');
+    $('#main').innerHTML = `<div class="card"><h3>Delivery fees by area</h3><small>If the customer's address contains the keyword, that fee is added.</small><br><br>
+      ${z.map((x) => `${esc(x.keyword)} – ${naira(x.fee)} <button onclick="delZone(${x.id})">✕</button><br>`).join('')}<br>
+      <input id="zk" placeholder="Area keyword"> <input id="zf" type="number" placeholder="Fee ₦"> <button class="act" onclick="addZone()">Add</button></div>`;
+  },
+  async Chats() {
+    const cs = await api('/chats');
+    $('#main').innerHTML = cs.map((c) => `<div class="card"><b>${esc(c.name || c.phone)}</b> (${esc(c.phone)})
+      <div id="m-${c.phone}"></div>
+      <textarea id="r-${c.phone}" rows="2" style="width:100%" placeholder="Reply..."></textarea>
+      <button class="act" onclick="reply('${c.phone}',false)">Send</button> <button onclick="reply('${c.phone}',true)">Send & end chat</button></div>`).join('') || '<div class="card">No customers waiting for admin.</div>';
+    for (const c of cs) {
+      const ms = await api('/messages/' + c.phone);
+      $('#m-' + c.phone).innerHTML = ms.slice(-8).map((m) => `<small>${m.direction === 'in' ? '👤' : '🤖'} ${esc(m.body)}</small>`).join('<br>');
+    }
+  },
+};
+
+async function setStatus(id, status) { await api(`/orders/${id}/status`, 'POST', { status }); }
+async function saveProduct(btn) {
+  const tr = btn.closest('tr'), i = tr.querySelectorAll('input'), sel = tr.querySelector('select');
+  const r = await api('/products', 'POST', { id: tr.dataset.id || undefined, name: i[0].value, category: i[1].value, price: i[2].value, stock: i[3].value, description: i[4].value, image_url: i[5].value, active: +sel.value });
+  if (r.error) return alert(r.error);
+  show('Products');
+}
+async function addZone() { await api('/zones', 'POST', { keyword: $('#zk').value, fee: $('#zf').value }); show('Zones'); }
+async function delZone(id) { await api('/zones/' + id, 'DELETE'); show('Zones'); }
+async function reply(phone, end) {
+  const text = $('#r-' + phone).value.trim();
+  if (!text && !end) return;
+  await api('/reply', 'POST', { phone, text, end });
+  show('Chats');
+}
+start();
+</script>
+</body>
+</html>
