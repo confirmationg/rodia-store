@@ -8,6 +8,7 @@ const bot = require('./bot');
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (q, s) => s.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('/admin', (q, s) => s.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
 /* ---------- WhatsApp webhook ---------- */
