@@ -19,8 +19,7 @@ app.get('/webhook', (q, s) => {
 
 const seen = new Set();
 app.post('/webhook', (q, s) => {
-  s.sendStatus(200);
-  console.log('[webhook]', JSON.stringify(q.body).slice(0, 300));
+  s.sendStatus(200);console.log('[webhook]', JSON.stringify(q.body).slice(0, 300));
   try {
     const v = q.body.entry?.[0]?.changes?.[0]?.value;
     const m = v?.messages?.[0];
