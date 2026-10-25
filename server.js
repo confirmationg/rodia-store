@@ -113,6 +113,8 @@ A.post('/reply', (q, s) => {
   }
   s.json({ ok: 1 });
 });
-
+app.get('/health', (q, s) => s.send('ok'));
+process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
+process.on('uncaughtException', (e) => console.error('[uncaughtException]', e));
 const port = Number(process.env.PORT) || 5000;
 app.listen(port, '0.0.0.0', () => console.log('RODIA Store running on port ' + port));
